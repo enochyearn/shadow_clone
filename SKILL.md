@@ -1,6 +1,6 @@
 ---
 name: shadow-clone
-description: Coordinates clean-context subagents, called clones, for large or risky code changes. Runs read-only research in parallel, one writing clone at a time, then fresh-context verification and review, while the main agent decides what to accept. Use for multi-file or cross-component changes, risky refactors or migrations, schema, API, CLI or data-contract changes, unfamiliar code, unknown downstream consumers, or requests to delegate work or get an independent review. Skip small, obvious, or mechanical edits.
+description: Coordinates clean-context subagents, called clones, for large or risky code changes. Runs read-only research in parallel, one writing clone at a time, then fresh-context verification and review, while the main agent decides what to accept. Use for multi-file or cross-component changes, risky refactors or migrations, changes to schemas, APIs, CLIs or data contracts that other code depends on, unfamiliar code, unknown downstream consumers, or requests to delegate work or get an independent review. Skip small, obvious, or mechanical edits.
 ---
 
 # Shadow Clone
@@ -387,7 +387,7 @@ After the last task is accepted:
 |---|---|
 | Verification FAIL, cause clear | Dispatch a coding clone with a bounded fix docket |
 | FAIL with unclear cause, or INCONCLUSIVE | Dispatch a debug-diagnosis clone, then a fix clone; or rerun the decisive check yourself |
-| Review REJECT | Undo the task's changes (Baselines and Undo), then redo it with a revised docket or re-plan |
+| Review REJECT | Undo the task's changes per Baselines and Undo (ask first if the user had uncommitted edits in those files), then redo it with a revised docket or re-plan |
 | ACCEPT WITH MINOR FIXES | Apply or dispatch a small fix, then rerun only the affected checks |
 | Clone dies, gives no report, or ignores the format | Retry once with a narrower mission; then do the step inline or ask the user |
 | Still failing after 2 fix rounds | Stop; re-plan or ask the user |

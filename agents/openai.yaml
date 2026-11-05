@@ -1,4 +1,4 @@
 interface:
   display_name: "Shadow Clone"
-  short_description: "Coordinate clean-context clones without parallel writers"
-  default_prompt: "Use $shadow-clone to decide whether this task needs read-only research, a sequential coding clone, fresh review, or focused verification."
+  short_description: "Coordinate clean-context subagents without parallel writers"
+  default_prompt: "Use $shadow-clone to decide whether this task needs read-only research, a sequential coding clone, fresh review, or focused verification. You may start subagents if it does."

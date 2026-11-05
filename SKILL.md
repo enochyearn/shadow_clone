@@ -1,6 +1,6 @@
 ---
 name: shadow-clone
-description: Use when large, risky, cross-cutting, or context-heavy work needs clean-context subagents while preserving controller judgment and avoiding parallel writers.
+description: Coordinates clean-context subagents, called clones, for large or risky code changes. Runs read-only research in parallel, one writing clone at a time, then fresh-context verification and review, while the main agent decides what to accept. Use for multi-file or cross-component changes, risky refactors or migrations, schema, API, CLI or data-contract changes, unfamiliar code, unknown downstream consumers, or requests to delegate work or get an independent review. Skip small, obvious, or mechanical edits.
 ---
 
 # Shadow Clone

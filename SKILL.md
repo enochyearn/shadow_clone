@@ -177,7 +177,7 @@ Keep the log in a scratch file outside the repository, or in the plan file. Neve
 
 ### 6. Check What Each Clone Changed
 
-Before and after each clone, record `git status --porcelain -uall` and compare. Every changed or new path must be inside the clone's write scope; for read-only clones that scope is empty, apart from controller-approved verification side effects.
+Before and after each clone, record `git status --porcelain -uall` plus a content hash (`git hash-object`) of each listed path, and compare the union of paths from both snapshots; the hashes catch new edits to files that were already modified. Every changed or new path must be inside the clone's write scope; for read-only clones that scope is empty, apart from controller-approved verification side effects.
 
 Out-of-scope changes mean REJECT. Without git, compare file lists and modification times instead.
 
@@ -378,7 +378,7 @@ After the last task is accepted:
 
 ### Baselines and Undo
 
-- Before each coding task, record the starting point: a commit if the user allows commits, otherwise a `git status --porcelain -uall` snapshot plus a saved diff.
+- Before each coding task, record the starting point: a commit if the user allows commits and the tree has no uncommitted user edits, otherwise the status-and-hash snapshot plus a saved diff. Never sweep the user's pre-existing edits into a baseline commit.
 - On REJECT, undo automatically only if the task's files had no uncommitted user changes when the task began. Otherwise stop and ask the user; never discard work that existed before the task.
 
 ### Outcomes

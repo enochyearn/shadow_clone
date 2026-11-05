@@ -119,6 +119,8 @@ For one project, from its root:
 git clone https://github.com/enochyearn/shadow_clone.git .agents/skills/shadow-clone
 ```
 
+This puts a separate git repository inside your project. To keep the skill in your project's own history, copy the files instead, or add this repository as a git submodule.
+
 Restart Codex if the skill does not appear.
 
 ### Other agents

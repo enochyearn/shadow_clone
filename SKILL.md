@@ -25,6 +25,10 @@ Shadow Clone does not replace planning, implementation, review, or verification 
 
 ## Core Definitions
 
+### Clone
+
+A **clone** is a subagent started with a fresh context. It knows only the prompt the controller writes, so every rule it must follow goes into that prompt.
+
 ### Controller
 
 The inline agent is the **controller**. It is not a clone.
@@ -47,29 +51,40 @@ A **coding clone** may edit files, but only for one bounded task.
 
 Rules:
 
-- Runs sequentially.
+- Runs sequentially: one coding clone at a time, even on separate files.
 - Receives a task docket, allowed write scope, acceptance criteria, and relevant discoveries.
 - Writes code and/or tests only within scope.
-- Reports changed files, commands run, uncertainties, and new discoveries.
+- Reports with the Coding Clone Report: changed files, commands run, uncertainties, questions, and new discoveries.
 - Does not continue into the next task.
-- Does not broaden architecture without asking the controller.
+- Does not broaden scope or architecture. If it needs to, it stops and reports the question to the controller.
 
-If tests need to be added or changed, dispatch a coding clone with a **test-only write scope**.
+Its write scope is one of:
+
+- **implementation**: code and tests for one task
+- **test-only**: tests only, used when testing or review finds a test gap
+- **fix**: a bounded fix from a fix docket
 
 ### Read-Only Clone
 
 A **read-only clone** does not edit files.
 
-It can operate in one selected mode:
+It operates in one selected mode per dispatch:
 
 - research
 - testing / verification
-- review
+- review, with one or more lenses
 - debug diagnosis
 
 A read-only clone may inspect stable files, diffs, command output, artifacts, logs, tests, and documentation. It returns evidence-backed findings.
 
-## Hard Rules
+### Request, Task, Stable Revision
+
+- The **request** is the user's whole ask. A **task** is one routed piece of it.
+- A **stable revision** is the worktree after the current coding clone has stopped and reported, with no other writer active. The controller records it (see Baselines and Undo), and testing and review judge only that task's changes.
+
+## Invariants
+
+These rules always apply.
 
 ### 1. Independent Research Can Run in Parallel
 
@@ -91,29 +106,11 @@ Anything that writes, runs verification against the current worktree, diagnoses 
 
 Sequential activities:
 
-- coding clones
-- test-writing clones
-- testing / verification clones against the current diff
-- reviewer clones judging the current diff
-- debugger clones diagnosing current failures
-- fix clones
+- coding clones, in any write scope
+- read-only clones verifying, reviewing, or diagnosing the current revision
 - the next coding task
 
-Default task pipeline:
-
-```text
-Controller
--> Coding Clone for Task N
--> Read-Only Clone in testing/verification mode
--> Read-Only Clone in review mode
--> Controller judgment
--> Fix Coding Clone if needed
--> re-test / re-review if needed
--> accept Task N
--> Coding Clone for Task N+1
-```
-
-Do not run a testing clone while a coding clone is still editing. Do not run reviewer clones until the coding clone has stopped and reported its changed files. Do not start the next coding task until testing, review, controller judgment, and required fixes for the current task are complete.
+Do not run a testing clone while a coding clone is still editing. Do not run reviewer clones until the coding clone has stopped and reported its changed files. Do not start the next coding task until the current task is accepted (Step 5).
 
 Multiple read-only review clones may be parallelized only when the diff is stable and the controller explicitly chooses that. Default to sequential review for clarity.
 
@@ -141,6 +138,8 @@ Good:
 `exports/foo.py` adds column `bar`, but `tests/exports/test_foo.py` only checks that the column exists. It does not assert the value semantics required by the task.
 ```
 
+Before acting on a finding, the controller opens the cited `file:line` or reruns the cited command.
+
 ### 4. Fresh Context, Narrow Mission
 
 A clone should not inherit the full chat history.
@@ -153,9 +152,12 @@ mission
 bounded scope
 necessary context only
 constraints
+clone rules
 expected output
 stop condition
 ```
+
+The clone rules are the fixed **Clone Rules** block in `references/templates.md`. Paste it into every dispatch, because a clone cannot follow rules it never sees.
 
 Never dispatch vague prompts like:
 
@@ -171,25 +173,49 @@ Fresh clones forget what previous clones learned unless the controller preserves
 
 After each clone that produces useful findings, the controller updates an **Accumulated Discoveries** log. Inject only relevant discoveries into future clone prompts.
 
-### 6. Scale Process to Risk
+Keep the log in a scratch file outside the repository, or in the plan file. Never commit it.
 
-Do not use every mode for every task.
+### 6. Check What Each Clone Changed
+
+Before and after each clone, record `git status --porcelain -uall` and compare. Every changed or new path must be inside the clone's write scope; for read-only clones that scope is empty, apart from controller-approved verification side effects.
+
+Out-of-scope changes mean REJECT. Without git, compare file lists and modification times instead.
+
+## Heuristics
+
+These guide judgment. They are not hard rules.
+
+### Scale Process to Risk
+
+Size decides how to split work. Risk decides how much testing and review each task gets. Do not use every mode for every task.
+
+Size:
+
+```text
+XS: 1 file, obvious local change
+S: 1-2 files, one concern
+M: 3-5 files, one feature slice
+L: 6-8 files; split into M-or-smaller tasks if possible
+XL: 9+ files or multiple independent subsystems; must split before implementation
+```
+
+Process by tier:
 
 ```text
 XS obvious task:
   controller handles it, or one coding clone + controller check
 
 S well-scoped task:
-  coding clone -> optional combined review clone -> controller
+  coding clone -> optional review clone (one or more lenses) -> controller
 
 M task or unfamiliar component:
   research clone(s) -> coding clone -> testing/verification -> review -> controller
 
-High-risk interface/schema/API/data/model task:
+High-risk interface/schema/API/data/model task, at any size:
   research clone(s) -> coding clone -> testing/verification -> interface/invariant review -> quality/spec review -> controller
 ```
 
-### 7. Use Numeric Signals as Heuristics
+### Decide Whether to Clone
 
 Numbers help the controller notice when context may be getting too large, but they are not hard rules. Use them as warning lights, then make the final decision qualitatively based on risk, coupling, ambiguity, and how much judgment the task needs.
 
@@ -198,9 +224,9 @@ Consider using `shadow-clone` when one or more of these signals appear:
 | Signal | Usually Safe Inline | Consider Shadow Clone | Strong Shadow Clone Signal |
 |---|---:|---:|---:|
 | Files likely touched | 1-2 | 3-5 | 6+ or shared central files |
-| Files needing research | 1-3 | 4-10 | 10+ |
-| Lines of existing code to inspect | <300 | 300-1,000 | 1,000+ |
-| Largest relevant file | <300 lines | 300-800 lines | 800+ lines |
+| Files needing research | 1-3 | 4-9 | 10+ |
+| Lines of existing code to inspect | <300 | 300-999 | 1,000+ |
+| Largest relevant file | <300 lines | 300-799 lines | 800+ lines |
 | Components involved | 1 | 2 | 3+ |
 | Downstream consumers | none/known | 1-2 | 3+ or unknown |
 | Verification commands | 0-1 simple test | 2-3 targeted checks | smoke/canary/artifact inspection |
@@ -213,18 +239,24 @@ Qualitative factors can override the numbers:
 - Unknown consumers, unclear invariants, surprising test gaps, or disagreement between agents are stronger signals than raw file count.
 - If coordinating clones would take longer than understanding the task directly, skip cloning.
 
-## When to Use
+Typical fits: M-sized or larger tasks, or high-risk small ones; large repos whose local detail would pollute the controller's context; producer/consumer boundaries; implementation that should start from a fresh, narrow context; focused inspection of tests, logs, or artifacts; and work that deserves a fresh-context review.
 
-Use `shadow-clone` when:
+Then ask:
 
-- the repo is large enough that inline context will get polluted by local details
-- the task touches multiple components or producer/consumer boundaries
-- you need to understand interfaces, schemas, commands, consumers, or invariants before writing code
-- implementation should happen from a fresh, narrow coding context
-- review should happen from a fresh context rather than the implementer context
-- tests/logs/artifacts need focused inspection
-- the task is M-sized or larger, or high-risk despite being small
-- hidden downstream consumers, generated artifacts, or verification gaps could matter
+```text
+Do I understand the component boundaries?
+Do I know what inputs/outputs/interfaces must be preserved?
+Do I know which tests or commands prove success?
+```
+
+If any answer is no, use research clones.
+
+```text
+Could a fresh reviewer catch things my current context will miss?
+Is the task too broad for one clean implementation prompt?
+```
+
+If either answer is yes, use a review clone or split the task.
 
 Do not use `shadow-clone` when:
 
@@ -233,13 +265,14 @@ Do not use `shadow-clone` when:
 - the change is mechanical and low-risk
 - the task is already broken into safe executable steps with adequate review
 - coordination overhead would exceed the benefit
-- you are tempted to spawn parallel writers over overlapping files
+
+Never use it to run more than one writer at a time.
 
 ## Relationship to Existing Skills
 
-Shadow Clone should complement, not replace, existing skills.
+Shadow Clone should complement, not replace, existing skills. The skills below are separate and not included here. Use them if installed; otherwise use this skill's templates.
 
-| Need | Prefer |
+| Need | Prefer, if installed |
 |---|---|
 | Break a spec into tasks | `planning-and-task-breakdown` |
 | Write a detailed implementation plan | `writing-plans` |
@@ -256,23 +289,13 @@ big messy reality
 -> clean handoff to planning/execution/review skills
 ```
 
-When a formal implementation plan already exists, do not duplicate it. Use Shadow Clone only to prepare missing evidence, routing, review lenses, or accumulated discoveries.
+When a formal implementation plan already exists, do not duplicate it. Use Shadow Clone only to prepare missing evidence, routing, review lenses, or accumulated discoveries. After a handoff, the one-writer, evidence, change-check, and finish rules still apply.
 
 ## Process
 
 ### Step 1: Decide Whether to Clone
 
-Ask:
-
-```text
-Do I understand the component boundaries?
-Do I know what inputs/outputs/interfaces must be preserved?
-Do I know which tests or commands prove success?
-Could a fresh reviewer catch things my current context will miss?
-Is the task too broad for one clean implementation prompt?
-```
-
-If no, use one or more shadow clones.
+Apply **Decide Whether to Clone** above. If clones would not help, work inline.
 
 ### Step 2: Bound the Work
 
@@ -320,46 +343,73 @@ The controller turns clone findings into:
 - allowed write scopes
 - review lenses
 - verification commands
-- handoff packet
+- handoff packet: the routing table plus relevant discoveries, for the next skill
 - accumulated discoveries
 
-If the work is not yet executable, hand off to `planning-and-task-breakdown` or `writing-plans`.
+If the work is not yet executable, hand off to `planning-and-task-breakdown` or `writing-plans` if installed, or write the plan with the Task Routing Table.
 
-If the work is executable, hand off to `subagent-driven-development` or dispatch the next bounded coding clone.
+If the work is executable, hand off to `subagent-driven-development` if installed, or dispatch the next bounded coding clone.
 
-### Step 5: Run Sequential Task Pipeline
+### Step 5: Run the Per-Task Pipeline
 
-For each task:
+For each task, work through this checklist. Testing and review steps apply when the task's tier requires them.
 
-1. Dispatch one coding clone.
-2. Wait until it stops and reports changed files.
-3. Dispatch testing/verification clone if verification needs focused inspection.
-4. Dispatch reviewer clone with selected lenses.
-5. Controller verifies key evidence and decides.
-6. If fixes are needed, dispatch a bounded coding clone.
-7. Re-test / re-review as needed.
-8. Update discoveries.
-9. Move to next task only after acceptance.
+```text
+- [ ] Record the baseline (Baselines and Undo)
+- [ ] Dispatch one coding clone with a task docket
+- [ ] Wait until it stops and reports changed files
+- [ ] Check what it changed against its write scope
+- [ ] Testing/verification clone, if the tier requires it
+- [ ] Review clone with selected lenses, if the tier requires it
+- [ ] Controller spot-checks key evidence and decides (Outcomes)
+- [ ] Fix rounds as needed, each followed by re-test / re-review: at most 2, then stop and re-plan or ask the user
+- [ ] Update discoveries
+- [ ] Accept the task, then start the next one
+```
+
+### Step 6: Finish
+
+After the last task is accepted:
+
+1. Run the full verification on the combined change, not only the per-task checks.
+2. Run one whole-change review against the original request, focused on interfaces between tasks.
+3. Clean up verification side effects that are not part of the deliverable.
+4. Report to the user what changed, what is verified (with evidence), what is not, and open risks.
+
+### Baselines and Undo
+
+- Before each coding task, record the starting point: a commit if the user allows commits, otherwise a `git status --porcelain -uall` snapshot plus a saved diff.
+- On REJECT, undo automatically only if the task's files had no uncommitted user changes when the task began. Otherwise stop and ask the user; never discard work that existed before the task.
+
+### Outcomes
+
+| Outcome | Next step |
+|---|---|
+| Verification FAIL, cause clear | Dispatch a coding clone with a bounded fix docket |
+| FAIL with unclear cause, or INCONCLUSIVE | Dispatch a debug-diagnosis clone, then a fix clone; or rerun the decisive check yourself |
+| Review REJECT | Undo the task's changes (Baselines and Undo), then redo it with a revised docket or re-plan |
+| ACCEPT WITH MINOR FIXES | Apply or dispatch a small fix, then rerun only the affected checks |
+| Clone dies, gives no report, or ignores the format | Retry once with a narrower mission; then do the step inline or ask the user |
+| Still failing after 2 fix rounds | Stop; re-plan or ask the user |
+| Clones disagree | Check the cited evidence yourself; if still unclear, dispatch one tie-break clone with both claims or ask the user; record the decision under Decisions Made |
+
+### When Clones Are Not Available
+
+If the host has no subagent tool, needs the user's explicit permission to start subagents, or the controller is itself a subagent that cannot start more: say so, and ask for permission if that is the only blocker. Otherwise run the same phases inline, one at a time, with the same templates, one-writer rule, and evidence rule.
+
+When the host offers a read-only agent type or sandbox, use it for read-only clones. Still run the change check, because some hosts remove only edit tools and shell commands can still write.
 
 ## Read-Only Clone Modes
 
 ### Research Mode
 
-Purpose:
-
-```text
-Build a reliable shadow model of one bounded slice before implementation.
-```
+Purpose: Build a reliable shadow model of one bounded slice before implementation.
 
 Research mode returns a **Shadow Research Brief**.
 
 ### Testing / Verification Mode
 
-Purpose:
-
-```text
-Assess what a stable implementation result actually proves.
-```
+Purpose: Assess what a stable implementation result actually proves.
 
 A testing/verification clone answers:
 
@@ -376,11 +426,7 @@ Verification commands may write caches, artifacts, snapshots, generated files, o
 
 ### Review Mode
 
-Purpose:
-
-```text
-Inspect a stable result from a clean context.
-```
+Purpose: Inspect a stable result from a clean context.
 
 The controller selects one or more review lenses:
 
@@ -394,72 +440,22 @@ The controller selects one or more review lenses:
 
 ### Debug Diagnosis Mode
 
-Purpose:
+Purpose: Explain a specific failure and propose the smallest fix path.
 
-```text
-Explain a specific failure and propose the smallest fix path.
-```
-
-A debug diagnosis clone is read-only. If the fix should be applied, dispatch a coding clone with a bounded fix docket.
+A debug diagnosis clone is read-only and returns a Debug Diagnosis Report. If the fix should be applied, dispatch a coding clone with a bounded fix docket.
 
 ## Templates
 
-Output templates and the clone dispatch prompt template are in `references/templates.md`. Copy the matching template into each clone prompt.
+All templates, including the Clone Rules block, are in `references/templates.md`. Copy the Clone Rules block and the matching template into each clone prompt.
 
 ## Anti-Patterns
 
-### Runaway Clone Tree
-
-Clones spawning clones without controller checkpoints.
-
-Fix: every clone reports back to the controller. The controller decides the next clone.
-
-### Context Dump
-
-Giving a clone the whole chat history or entire repo context.
-
-Fix: give narrow mission, relevant excerpts, and explicit scope.
-
-### Parallel Writers
-
-Two coding clones edit overlapping files or make design decisions in parallel.
-
-Fix: one writer at a time. Split tasks or serialize.
-
-### Stale Testing
-
-Testing clone runs while code is still changing.
-
-Fix: testing/verification starts only after coding clone stops and reports changed files.
-
-### Rubber-Stamp Review
-
-Reviewer says "looks good" without grounded findings or verdict.
-
-Fix: reject generic praise. Require evidence and explicit verdict.
-
-### Bureaucratic Pipeline
-
-Every task gets every clone mode.
-
-Fix: scale review/testing to risk.
-
-### Shadow Theory Instead of Shadow Evidence
-
-Clone returns plausible architecture guesses without evidence.
-
-Fix: require paths, commands, diffs, outputs, and confidence labels.
-
-## Summary
-
-Shadow Clone is a discipline:
-
-```text
-Research before risky changes.
-One writer at a time.
-Fresh eyes for review.
-Testing/review happens against stable results.
-Evidence for everything.
-Knowledge carries forward.
-Controller decides.
-```
+| Anti-pattern | Looks like | Fix |
+|---|---|---|
+| Runaway Clone Tree | Clones spawning clones without controller checkpoints. | Every clone reports back to the controller. The controller decides the next clone. The Clone Rules block forbids clones from starting other agents. |
+| Context Dump | Giving a clone the whole chat history or entire repo context. | Give narrow mission, relevant excerpts, and explicit scope. |
+| Parallel Writers | Two coding clones run at the same time, even on separate files, or make design decisions in parallel. | One writer at a time. Split tasks and serialize. |
+| Stale Testing | Testing clone runs while code is still changing. | Testing/verification starts only after coding clone stops and reports changed files. |
+| Rubber-Stamp Review | Reviewer says "looks good" without grounded findings or verdict. | Reject generic praise. Require evidence and explicit verdict. |
+| Bureaucratic Pipeline | Every task gets every clone mode. | Scale review/testing to risk. |
+| Shadow Theory Instead of Shadow Evidence | Clone returns plausible architecture guesses without evidence. | Require paths, commands, diffs, outputs, and confidence labels. |

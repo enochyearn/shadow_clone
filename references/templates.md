@@ -1,21 +1,117 @@
 # Shadow Clone Templates
 
-Copy the matching template into each clone prompt. Clones start with a fresh context and never see `SKILL.md`.
+Copy the Clone Rules block and the matching template into each clone prompt. Clones start with a fresh context and never see `SKILL.md`.
 
 ## Contents
 
-- Output Templates
-  1. Shadow Research Brief
-  2. Task Routing Table
-  3. Task Docket for Coding Clone
-  4. Testing / Verification Report
-  5. Review Report
-  6. Accumulated Discoveries Log
-- Clone Dispatch Prompt Template
+1. Clone Rules
+2. Clone Dispatch Prompt
+3. Task Docket for Coding Clone
+4. Shadow Research Brief
+5. Task Routing Table
+6. Coding Clone Report
+7. Testing / Verification Report
+8. Review Report
+9. Debug Diagnosis Report
+10. Accumulated Discoveries Log
 
-## Output Templates
+Which report each clone returns:
 
-### 1. Shadow Research Brief
+| Clone | Returns |
+|---|---|
+| Read-only, research mode | Shadow Research Brief |
+| Read-only, testing / verification mode | Testing / Verification Report |
+| Read-only, review mode | Review Report |
+| Read-only, debug diagnosis mode | Debug Diagnosis Report |
+| Coding clone, any write scope | Coding Clone Report |
+
+## 1. Clone Rules
+
+Paste this block into every clone prompt, unchanged.
+
+```markdown
+# Clone Rules
+- Stay inside the scope in this prompt. If you need to leave it or make a design decision, stop and report the question instead.
+- Edit only inside your allowed write scope. Read-only clones edit nothing.
+- Do not start other agents. Do not commit, push, or switch branches unless this prompt says so.
+- Search before reading broadly.
+- Back every finding with evidence (file path and line, command output, test name, or diff) and mark uncertainty.
+- Use the expected output format. Omit sections that do not apply, aim for about one screen, and put bulky evidence in a file and give its path.
+- Stop when the stop condition is met, and report.
+```
+
+## 2. Clone Dispatch Prompt
+
+Use this structure for every clone. For a coding clone, the Task Docket supplies the Mission, Context, Scope, and Constraints.
+
+```markdown
+# Your Role
+[Coding Clone / Read-Only Clone]
+
+# Mode or Write Scope
+[Read-only mode: research / testing-verification / review / debug-diagnosis]
+[Coding write scope: implementation / test-only / fix]
+
+# Mission
+[Exact bounded task]
+
+# Context
+[Only necessary context]
+
+# Scope
+In scope:
+- `path`
+
+Out of scope:
+- `path` or behavior
+
+# Constraints
+[Read-only or allowed write scope, commands allowed/disallowed, must-preserve rules]
+
+# Clone Rules
+[Paste the Clone Rules block from section 1, unchanged]
+
+# Expected Output
+[Template or exact format]
+
+# Stop Condition
+[When to stop and report back]
+```
+
+## 3. Task Docket for Coding Clone
+
+```markdown
+# Task Docket: [Task Name]
+
+## Goal
+[What this task must accomplish.]
+
+## Non-Goals
+[What this task must not do.]
+
+## Relevant Context
+[Only necessary excerpts from research briefs, user goals, accepted decisions, and discoveries.]
+
+## Allowed Write Scope
+- `path`
+
+## Read Scope
+- `path`
+
+## Must-Preserve Interfaces / Invariants
+- [interface/invariant]
+
+## Acceptance Criteria
+- [criterion]
+
+## Verification Commands
+- `command`
+
+## Stop Condition
+Stop after this task. Report with the Coding Clone Report. If you need to leave scope or make a design decision, stop and report the question instead.
+```
+
+## 4. Shadow Research Brief
 
 ```markdown
 # Shadow Research Brief: [Component / Surface]
@@ -95,60 +191,49 @@ Copy the matching template into each clone prompt. Clones start with a fresh con
 **Why:** [brief explanation]
 ```
 
-### 2. Task Routing Table
+## 5. Task Routing Table
 
 ```markdown
 # Shadow Clone Routing Table
 
-| Task | Size | Depends On | Write Scope | Sequential Reason | Review Lenses | Verification | Next Skill / Next Step |
-|---|---:|---|---|---|---|---|---|
-| T1 | S/M/L | none/T# | `path` | shared file / current diff / command output | spec + quality | `pytest ...` | subagent-driven-development |
+| Task | Size | Depends On | Write Scope | Review Lenses | Verification | Next Skill / Next Step |
+|---|---:|---|---|---|---|---|
+| T1 | XS/S/M/L/XL | none/T# | `path` | spec + quality | `pytest ...` | subagent-driven-development, if installed |
 ```
 
-Sizing guide:
+Sizes follow the scale in `SKILL.md` (Scale Process to Risk). Split L and XL tasks before implementation. Tasks run one at a time, in dependency order.
 
-```text
-XS: 1 file, obvious local change
-S: 1-2 files, one concern
-M: 3-5 files, one feature slice
-L: 5-8 files, split if possible
-XL: 8+ files or multiple independent subsystems; must split before implementation
-```
-
-### 3. Task Docket for Coding Clone
+## 6. Coding Clone Report
 
 ```markdown
-# Task Docket: [Task Name]
+# Coding Clone Report: [Task]
 
-## Goal
-[What this task must accomplish.]
+## Changed Files
+- `path` - [what changed]
 
-## Non-Goals
-[What this task must not do.]
+## Commands Run
 
-## Relevant Context
-[Only necessary excerpts from research briefs, user goals, accepted decisions, and discoveries.]
-
-## Allowed Write Scope
-- `path`
-
-## Read Scope
-- `path`
-
-## Must-Preserve Interfaces / Invariants
-- [interface/invariant]
+| Command | Result | Evidence |
+|---|---|---|
+| `command` | PASS/FAIL | output summary |
 
 ## Acceptance Criteria
-- [criterion]
 
-## Verification Commands
-- `command`
+| Criterion | Met? | Evidence |
+|---|---|---|
+| [criterion] | Yes/No/Partly | `path` / output |
 
-## Stop Condition
-Stop after this task. Report changed files, commands run, output summary, risks, and new discoveries.
+## Uncertainties and Risks
+- [item]
+
+## Questions for Controller
+- [scope or design question that stopped the work, if any]
+
+## New Discoveries
+- [discovery]
 ```
 
-### 4. Testing / Verification Report
+## 7. Testing / Verification Report
 
 ```markdown
 # Testing / Verification Report: [Task]
@@ -168,11 +253,14 @@ Stop after this task. Report changed files, commands run, output summary, risks,
 ## Coverage Gaps / Edge Cases
 - [gap]
 
+## Side Effects Observed
+- [caches, snapshots, generated files, or external state written; or none]
+
 ## Verdict
 PASS / FAIL / INCONCLUSIVE
 ```
 
-### 5. Review Report
+## 8. Review Report
 
 ```markdown
 # Shadow Review Report: [Task]
@@ -197,7 +285,33 @@ ACCEPT / ACCEPT WITH MINOR FIXES / REJECT
 - [triage notes]
 ```
 
-### 6. Accumulated Discoveries Log
+## 9. Debug Diagnosis Report
+
+```markdown
+# Debug Diagnosis Report: [Failure]
+
+## Symptom
+[Exact error, failing test, or observed versus expected behavior]
+
+## Reproduction
+`command` - [result]
+
+## Evidence
+- [finding] - evidence: `path:line` / output
+
+## Root Cause
+[cause] - confidence: High/Medium/Low
+
+## Smallest Fix Path
+- [change] in `path`
+
+## What Would Disprove This
+- [check]
+```
+
+## 10. Accumulated Discoveries Log
+
+Keep this log in a scratch file outside the repository, or in the plan file. Never commit it.
 
 ```markdown
 # Accumulated Discoveries
@@ -219,38 +333,4 @@ ACCEPT / ACCEPT WITH MINOR FIXES / REJECT
 
 ## Cross-Cutting Concerns
 - [concern affecting multiple tasks]
-```
-
-## Clone Dispatch Prompt Template
-
-Use this structure for every clone.
-
-```markdown
-# Your Role
-[Coding Clone / Read-Only Clone]
-
-# Mode
-[research / testing-verification / review / debug-diagnosis / implementation]
-
-# Mission
-[Exact bounded task]
-
-# Context
-[Only necessary context]
-
-# Scope
-In scope:
-- `path`
-
-Out of scope:
-- `path` or behavior
-
-# Constraints
-[Read-only or allowed write scope, commands allowed/disallowed, must-preserve rules]
-
-# Expected Output
-[Template or exact format]
-
-# Stop Condition
-[When to stop and report back]
 ```
